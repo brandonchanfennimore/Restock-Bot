@@ -2,6 +2,9 @@ import os
 import json
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+load_dotenv()
+import os
 
 import discord
 from discord.ext import tasks, commands
@@ -10,7 +13,7 @@ from discord.ext import tasks, commands
 # CONFIG – EDIT THESE
 # =========================
 
-DISCORD_TOKEN = "MTQ0MDk1NDY4OTE5MjU5NTQ3Nw.GOyGWV.K1WhDkCyaUy2ZID9KDyLNxhTZjilVKegSLdaMY"  # <-- paste your token here
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # <-- paste your token here
 CHANNEL_ID = 1440955336704921694  # <-- replace with the ID of the channel for alerts
 PRODUCTS_FILE = "products.json"
 

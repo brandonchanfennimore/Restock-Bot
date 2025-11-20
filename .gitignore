@@ -1,0 +1,20 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+
+# Environment variables (secrets)
+.env
+
+# VS Code settings
+.vscode/
+
+# macOS system junk
+.DS_Store
+
+# Temporary files / logs
+*.log
+*.tmp
