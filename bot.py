@@ -17,9 +17,9 @@ import logging
 import re
 
 
-# =====================================================
+######################################################################
 # CONFIG
-# =====================================================
+######################################################################
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = 1440955336704921694
@@ -34,33 +34,38 @@ NO_CHANGE_MESSAGE_INTERVAL = 600
 MAX_STORE_ITEMS_PER_WATCH = 80
 
 
-# =====================================================
+######################################################################
 # DATA
-# =====================================================
+######################################################################
 
 PRODUCTS = []
 STORE_WATCHES = []
 
 
-# =====================================================
-# PREFILTER TCG DETECTOR
-# =====================================================
+######################################################################
+# PREFILTER: What counts as Pokémon TCG
+######################################################################
 
 IGNORED_POKEMON_KEYWORDS = [
     "sleeve", "sleeves", "binder", "binder collection",
-    "plush", "plushie", "figure", "figures", "toy", "toys",
-    "funko", "pop", "shirt", "t-shirt", "tee", "hoodie",
-    "sock", "hat", "cap", "backpack", "mug",
-    "cup", "glass", "bottle", "keychain", "poster", "canvas",
-    "pajamas", "pjs", "blanket", "towel",
+    "plush", "plushie", "plushies",
+    "figure", "figures", "statue", "statues",
+    "toy", "toys", "funko", "pop", "pop!", "lego",
+    "shirt", "t-shirt", "tee", "hoodie",
+    "sock", "socks", "hat", "cap",
+    "backpack", "bag", "wallet",
+    "mug", "cup", "glass", "bottle",
+    "keychain", "poster", "canvas",
+    "pajamas", "blanket", "comforter",
+    "towel", "bath", "rug", "mat"
 ]
 
 TCG_POSITIVE = [
-    "booster", "box", "etb", "elite trainer",
+    "booster", "box", "boxes", "etb", "elite trainer",
     "booster pack", "booster packs", "trainer box",
     "build & battle", "collection", "premium",
-    "tin", "deck", "gx box", "league battle deck",
-    "blister", "bundle"
+    "tin", "tins", "deck", "league battle deck",
+    "gx box", "blister", "bundle"
 ]
 
 
@@ -75,19 +80,20 @@ def is_relevant_pokemon_title(title: str) -> bool:
     return True
 
 
-# =====================================================
+######################################################################
 # LOAD/SAVE
-# =====================================================
+######################################################################
 
 def load_products():
     global PRODUCTS
     if not os.path.exists(PRODUCTS_FILE):
         PRODUCTS = []
         return
+
     try:
         with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
             PRODUCTS = json.load(f)
-    except Exception:
+    except json.JSONDecodeError:
         PRODUCTS = []
 
     for p in PRODUCTS:
@@ -106,10 +112,11 @@ def load_store_watches():
     if not os.path.exists(STORE_WATCH_FILE):
         STORE_WATCHES = []
         return
+
     try:
         with open(STORE_WATCH_FILE, "r", encoding="utf-8") as f:
             STORE_WATCHES = json.load(f)
-    except Exception:
+    except json.JSONDecodeError:
         STORE_WATCHES = []
 
     for w in STORE_WATCHES:
@@ -122,37 +129,38 @@ def save_store_watches():
         json.dump(STORE_WATCHES, f, indent=2, ensure_ascii=False)
 
 
-# =====================================================
-# NETWORK HELPERS (threaded non-blocking HTTP)
-# =====================================================
+######################################################################
+# NETWORK: async threaded HTTP
+######################################################################
 
 async def fetch(url: str, headers=None):
-    headers = headers or {"User-Agent": "Mozilla/5.0 (stock-bot)"}
+    headers = headers or {"User-Agent": "Mozilla/5.0 (stock-alert-bot)"}
 
-    def _do():
+    def _get():
         return requests.get(url, headers=headers, timeout=10)
 
     try:
-        return await asyncio.to_thread(_do)
+        return await asyncio.to_thread(_get)
     except Exception:
         return None
 
 
-# =====================================================
+######################################################################
 # PRODUCT SCRAPING
-# =====================================================
+######################################################################
 
 def parse_json_ld(soup):
     scripts = soup.find_all("script", type="application/ld+json")
     price = None
     in_stock = None
-    preorder_flag = False
+    is_preorder = False
 
     for sc in scripts:
         try:
             data = json.loads(sc.string or "")
         except:
             continue
+
         items = data if isinstance(data, list) else [data]
         for item in items:
             if not isinstance(item, dict):
@@ -165,7 +173,8 @@ def parse_json_ld(soup):
                 offers = offers[0] if offers else None
 
             if isinstance(offers, dict):
-                raw_price = offers.get("price") or offers.get("priceSpecification", {}).get("price")
+                raw_price = offers.get("price") or \
+                            offers.get("priceSpecification", {}).get("price")
                 if raw_price and price is None:
                     try:
                         price = float(raw_price)
@@ -177,26 +186,27 @@ def parse_json_ld(soup):
                     in_stock = True
                 elif "preorder" in avail:
                     in_stock = None
-                    preorder_flag = True
+                    is_preorder = True
                 elif "outofstock" in avail:
                     in_stock = False
 
         if price is not None and in_stock is not None:
             break
 
-    return price, in_stock, preorder_flag
+    return price, in_stock, is_preorder
 
 
 def refine_html(soup, price, in_stock, is_preorder):
     text = soup.get_text(" ", strip=True).lower()
 
-    NEG = [
-        "coming soon", "sold out", "unavailable",
-        "out of stock", "out-of-stock",
-        "no longer available", "no longer accepting pre-orders"
+    negative = [
+        "coming soon", "available soon", "temporarily unavailable",
+        "currently unavailable", "sold out", "no longer available",
+        "no longer accepting pre-orders", "out of stock",
+        "out-of-stock"
     ]
 
-    if any(n in text for n in NEG):
+    if any(p in text for p in negative):
         in_stock = False
 
     for b in soup.find_all(["button", "a"]):
@@ -207,10 +217,11 @@ def refine_html(soup, price, in_stock, is_preorder):
 
         if "coming soon" in label:
             in_stock = False
+
         if ("preorder" in label or "pre-order" in label) and disabled:
             in_stock = False
 
-        if any(k in label for k in ("add to cart", "ship it", "buy now")) and not disabled:
+        if any(k in label for k in ("add to cart", "buy now", "ship it")) and not disabled:
             if in_stock is not False:
                 in_stock = True
 
@@ -235,14 +246,15 @@ async def check_product(url: str):
         return {"price": None, "in_stock": None}
 
     soup = BeautifulSoup(resp.text, "html.parser")
+
     price, in_stock, preorder_flag = parse_json_ld(soup)
     price, in_stock = refine_html(soup, price, in_stock, preorder_flag)
+
     return {"price": price, "in_stock": in_stock}
 
-
-# =====================================================
+######################################################################
 # STORE SCRAPING
-# =====================================================
+######################################################################
 
 async def scrape_store(url: str):
     resp = await fetch(url)
@@ -258,32 +270,34 @@ async def scrape_store(url: str):
             continue
         if not is_relevant_pokemon_title(txt):
             continue
-        items.append({
-            "title": txt,
-            "url": urljoin(url, a["href"])
-        })
 
+        item_url = urljoin(url, a["href"])
+        items.append({"title": txt, "url": item_url})
+
+    # Deduplicate
     unique = {(i["title"], i["url"]): i for i in items}
     lst = list(unique.values())
     return lst[:MAX_STORE_ITEMS_PER_WATCH]
 
 
-# =====================================================
-# BOT SETUP (IPv4-only connector)
-# =====================================================
+######################################################################
+# BOT SETUP (prefix "!")
+######################################################################
 
 intents = discord.Intents.default()
 intents.message_content = True
 
+# Create the bot normally — IPv4 connector is added in on_ready()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# =====================================================
+######################################################################
 # BOT COMMANDS
-# =====================================================
+######################################################################
 
 @bot.command()
 async def addwatch(ctx, name: str, store: str, url: str, threshold: float):
+    # Prevent duplicates
     for p in PRODUCTS:
         if p["url"].lower() == url.lower():
             await ctx.send("❌ This product is already being watched.")
@@ -296,10 +310,10 @@ async def addwatch(ctx, name: str, store: str, url: str, threshold: float):
         "threshold_price": float(threshold),
         "last_in_stock": False,
         "last_price": None,
-        "last_alert_in_stock": None,
+        "last_alert_in_stock": None
     })
-
     save_products()
+
     await ctx.send(f"✅ Now watching **{name}**")
 
 
@@ -307,11 +321,12 @@ async def addwatch(ctx, name: str, store: str, url: str, threshold: float):
 async def delwatch(ctx, index: int):
     index -= 1
     if index < 0 or index >= len(PRODUCTS):
-        await ctx.send("Invalid index.")
+        await ctx.send("❌ Invalid index.")
         return
+
     removed = PRODUCTS.pop(index)
     save_products()
-    await ctx.send(f"🗑️ Removed **{removed['name']}**")
+    await ctx.send(f"🗑️ Removed: **{removed['name']}**")
 
 
 @bot.command()
@@ -319,17 +334,18 @@ async def watchstore(ctx, url: str):
     STORE_WATCHES.append({
         "url": url,
         "last_titles": [],
-        "last_nothing_new_ts": 0,
+        "last_nothing_new_ts": 0
     })
     save_store_watches()
-    await ctx.send(f"📄 Now watching store page:\n{url}")
+
+    await ctx.send(f"📁 Now monitoring store page:\n{url}")
 
 
 @bot.command()
 async def delstore(ctx, index: int):
     index -= 1
     if index < 0 or index >= len(STORE_WATCHES):
-        await ctx.send("Invalid index.")
+        await ctx.send("❌ Invalid index.")
         return
 
     removed = STORE_WATCHES.pop(index)
@@ -348,7 +364,7 @@ async def list(ctx):
         for i, p in enumerate(PRODUCTS, start=1):
             msg.append(f"{i}. {p['name']} — {p['url']}")
 
-    msg.append("\n**📄 Watched Store Pages:**")
+    msg.append("\n**📂 Watched Store Pages:**")
     if not STORE_WATCHES:
         msg.append("  (none)")
     else:
@@ -367,12 +383,13 @@ async def helpme(ctx):
         "`!watchstore <url>`\n"
         "`!delstore <index>`\n"
         "`!list`\n"
+        "`!helpme`\n"
     )
 
 
-# =====================================================
+######################################################################
 # BACKGROUND LOOPS
-# =====================================================
+######################################################################
 
 @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
 async def product_loop():
@@ -388,14 +405,20 @@ async def product_loop():
         price = result["price"]
         stock = result["in_stock"]
 
+        # If newly in stock → announce ONCE
         if stock is True and product["last_alert_in_stock"] is not True:
-            msg = f"@everyone\n🎉 **IN STOCK**: {product['name']}\n"
+            msg = (
+                "@everyone\n"
+                f"🎉 **IN STOCK**: {product['name']}\n"
+            )
             if price is not None:
-                msg += f"Price: ${price:.2f}\n"
-            msg += f"{product['url']}"
+                msg += f"Price: **${price:.2f}**\n"
+            msg += product["url"]
+
             await channel.send(msg)
             product["last_alert_in_stock"] = True
 
+        # If out of stock → reset alert state
         if stock is False:
             product["last_alert_in_stock"] = False
 
@@ -410,21 +433,23 @@ async def store_loop():
     if not bot.is_ready():
         return
 
-    ch = bot.get_channel(CHANNEL_ID)
-    if not ch:
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
         return
 
     for s in STORE_WATCHES:
         items = await scrape_store(s["url"])
         titles = [i["title"] for i in items]
-        old = set(s["last_titles"])
-        new = [item for item in items if item["title"] not in old]
 
-        if new:
+        old_titles = set(s["last_titles"])
+        new_items = [i for i in items if i["title"] not in old_titles]
+
+        if new_items:
             msg = ["@everyone", "🆕 **New Pokémon TCG Items Appeared:**"]
-            for n in new:
+            for n in new_items:
                 msg.append(f"- {n['title']}\n  {n['url']}")
-            await ch.send("\n".join(msg))
+
+            await channel.send("\n".join(msg))
             s["last_titles"] = titles
         else:
             s["last_nothing_new_ts"] = time.time()
@@ -432,41 +457,40 @@ async def store_loop():
     save_store_watches()
 
 
-# =====================================================
-# READY EVENT
-# =====================================================
+######################################################################
+# BOT READY EVENT
+######################################################################
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-    # Force aiohttp to use IPv4 AFTER event loop is running
+    # Force IPv4 connector AFTER bot has an event loop
     session = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(family=socket.AF_INET)
     )
     bot.http._HTTPClient__session = session
 
-    # Announce bot is ready
+    # Startup announcement
     channel = bot.get_channel(CHANNEL_ID)
     if channel:
-        await channel.send("🤖 Bot is now **online** and monitoring products!")
+        await channel.send("🤖 Bot is now **online** and monitoring items!")
 
     product_loop.start()
     store_loop.start()
 
-
-
-# =====================================================
+######################################################################
 # RUN BOT
-# =====================================================
+######################################################################
 
 def main():
     if not DISCORD_TOKEN:
-        raise RuntimeError("Missing DISCORD_TOKEN")
+        raise RuntimeError("❌ DISCORD_TOKEN missing — check your .env file.")
+    load_products()
+    load_store_watches()
     bot.run(DISCORD_TOKEN)
 
 
 if __name__ == "__main__":
-    load_products()
-    load_store_watches()
     main()
+
