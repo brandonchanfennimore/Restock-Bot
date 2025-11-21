@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Scarlet & Violet Prismatic Evolutions Figure Collection",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-scarlet-38-violet-prismatic-evolutions-premium-figure-collection/-/A-94864079#lnk=sametab",
+    "threshold_price": 79.99,
+    "last_in_stock": true,
+    "last_price": null,
+    "last_no_change_ts": 1763693714.9938028
+  },
+  {
+    "name": "Black Kyurem ex & Melmetal ex",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-black-kyurem-ex-38-melmetal-ex/-/A-94827546#lnk=sametab",
+    "threshold_price": 49.99,
+    "last_in_stock": true,
+    "last_price": null,
+    "last_no_change_ts": 1763693329.866697
+  },
+  {
+    "name": "Scarlet & Violet— Destined Rivals Booster Bundle",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-scarlet-38-violet-8212-destined-rivals-booster-bundle/-/A-94300067#lnk=sametab",
+    "threshold_price": 29.99,
+    "last_in_stock": true,
+    "last_price": null,
+    "last_no_change_ts": 1763692801.3464496
+  },
+  {
+    "name": "Scarlet & Violet 6: Twilight Masquerade: Booster Bundle",
+    "store": "Walmart",
+    "url": "https://www.walmart.com/ip/Pok-mon-TCG-Scarlet-Violet-6-Twilight-Masquerade-Booster-Bundle/5511020275?conditionGroupCode=4&filters=%5B%7B%22intent%22%3A%22retailer%22%2C%22values%22%3A%5B%22Walmart%22%5D%7D%5D&classType=REGULAR&athbdg=L1103&from=/search",
+    "threshold_price": 57.0,
+    "last_in_stock": false,
+    "last_price": null,
+    "last_no_change_ts": 0
+  },
+  {
+    "name": "Mega Evolution Elite Trainer Box",
+    "store": "Walmart",
+    "url": "https://www.walmart.com/ip/Scarlet-Violet-Mega-Evolution-Elite-Trainer-Box/17328862239?conditionGroupCode=4&filters=%5B%7B%22intent%22%3A%22retailer%22%2C%22values%22%3A%5B%22Walmart%22%5D%7D%5D&classType=REGULAR&athbdg=L1103&from=/search",
+    "threshold_price": 79.95,
+    "last_in_stock": false,
+    "last_price": null,
+    "last_no_change_ts": 0
+  },
+  {
+    "name": "Pokémon - Trading Card Game: Scarlet & Violet - Prismatic Evolutions Booster Bundle",
+    "store": "BestBuy",
+    "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-scarlet-violet-prismatic-evolutions-booster-bundle/JJG2TL23JK",
+    "threshold_price": 26.94,
+    "last_in_stock": true,
+    "last_price": 26.94,
+    "last_no_change_ts": 1763693006.7574618
+  },
+  {
+    "name": "Pokémon - Trading Card Game: Pokemon Day 2026 Collection",
+    "store": "BestBuy",
+    "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-pokemon-day-2026-collection/JJG2TL3JS9",
+    "threshold_price": 14.99,
+    "last_in_stock": true,
+    "last_price": 14.99,
+    "last_no_change_ts": 1763693046.2403026
+  },
+  {
+    "name": "Pokémon - Trading Card Game: 151 Zapdos ex Box",
+    "store": "BestBuy",
+    "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-151-zapdos-ex-box/J3YSYH357L",
+    "threshold_price": 21.99,
+    "last_in_stock": true,
+    "last_price": 21.99,
+    "last_no_change_ts": 1763693401.77517
+  },
+  {
+    "name": "Pokémon - Trading Card Game: 151 Alakazam ex Box",
+    "store": "BestBuy",
+    "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-151-alakazam-ex-box/J3YSYH87PT",
+    "threshold_price": 21.99,
+    "last_in_stock": false,
+    "last_price": null,
+    "last_no_change_ts": 0
+  },
+  {
+    "name": "Pokémon - Trading Card Game: Mega Venusaur ex Premium Collection",
+    "store": "BestBuy",
+    "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-venusaur-ex-premium-collection/JJG2TLXQ35",
+    "threshold_price": 39.99,
+    "last_in_stock": true,
+    "last_price": 39.99,
+    "last_no_change_ts": 1763693098.6031444
+  }
+]

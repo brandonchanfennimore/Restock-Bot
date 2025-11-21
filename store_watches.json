@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Target",
+    "url": "https://www.target.com/",
+    "last_titles": [],
+    "last_nothing_new_ts": 1763693714.9921372
+  },
+  {
+    "name": "Walmart",
+    "url": "https://www.walmart.com/",
+    "last_titles": [],
+    "last_nothing_new_ts": 1763693801.3705413
+  },
+  {
+    "name": "BestBuy",
+    "url": "https://www.bestbuy.com/",
+    "last_titles": [],
+    "last_nothing_new_ts": 1763693327.9309258
+  },
+  {
+    "name": "GameStop",
+    "url": "https://www.gamestop.com/",
+    "last_titles": [],
+    "last_nothing_new_ts": 0
+  },
+  {
+    "name": "Pokemon Center TCG",
+    "url": "https://www.pokemoncenter.com/category/trading-card-game",
+    "last_titles": [],
+    "last_nothing_new_ts": 1763693566.615289
+  }
+]
