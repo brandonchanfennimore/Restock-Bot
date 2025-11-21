@@ -15,6 +15,7 @@ import asyncio
 import time
 import logging
 import re
+import builtins
 
 
 ######################################################################
@@ -99,7 +100,9 @@ def load_products():
     for p in PRODUCTS:
         p.setdefault("last_in_stock", False)
         p.setdefault("last_price", None)
-        p.setdefault("last_alert_in_stock", None)
+        p.setdefault("already_announced", False)
+        p.setdefault("last_announce_ts", 0)  # 👈 NEW
+
 
 
 def save_products():
@@ -158,10 +161,15 @@ def parse_json_ld(soup):
     for sc in scripts:
         try:
             data = json.loads(sc.string or "")
-        except:
+        except Exception:
             continue
 
-        items = data if isinstance(data, list) else [data]
+        # Use the real built-in list type even if `list` was shadowed
+        if builtins.isinstance(data, builtins.list):
+            items = data
+        else:
+            items = [data]
+
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -169,7 +177,7 @@ def parse_json_ld(soup):
                 continue
 
             offers = item.get("offers")
-            if isinstance(offers, list):
+            if builtins.isinstance(offers, builtins.list):
                 offers = offers[0] if offers else None
 
             if isinstance(offers, dict):
@@ -178,16 +186,16 @@ def parse_json_ld(soup):
                 if raw_price and price is None:
                     try:
                         price = float(raw_price)
-                    except:
+                    except Exception:
                         pass
 
-                avail = (offers.get("availability") or "").lower()
-                if "instock" in avail:
+                availability = (offers.get("availability") or "").lower()
+                if "instock" in availability:
                     in_stock = True
-                elif "preorder" in avail:
+                elif "preorder" in availability or "pre_order" in availability:
                     in_stock = None
                     is_preorder = True
-                elif "outofstock" in avail:
+                elif "outofstock" in availability or "out_of_stock" in availability:
                     in_stock = False
 
         if price is not None and in_stock is not None:
@@ -196,48 +204,79 @@ def parse_json_ld(soup):
     return price, in_stock, is_preorder
 
 
-def refine_html(soup, price, in_stock, is_preorder):
+def detect_in_stock_from_html(soup):
+    """
+    Decide in_stock purely from the HTML of a product page.
+    Target-specific: if a NonbuyableSection exists, it's not in stock.
+    """
     text = soup.get_text(" ", strip=True).lower()
 
-    negative = [
-        "coming soon", "available soon", "temporarily unavailable",
-        "currently unavailable", "sold out", "no longer available",
-        "no longer accepting pre-orders", "out of stock",
-        "out-of-stock"
+    # 1) Target-specific: NonbuyableSection = definitely not buyable
+    if soup.find(attrs={"data-test": "NonbuyableSection"}) is not None:
+        return False
+
+    # VERY aggressive "this is not available" phrases
+    negative_phrases = [
+        # Generic
+        "out of stock",
+        "out-of-stock",
+        "sold out",
+        "no longer available",
+        "no longer accepting pre-orders",
+        "no longer accepting preorders",
+        "temporarily unavailable",
+        "currently unavailable",
+        "unavailable",
+
+        # Target-specific preorder messages
+        "preorders have sold out",
+        "preorder has sold out",
+        "preorders sold out",
+        "preorder sold out",
+        "check back on release date",
+
+        # Other soft blocks / CTAs
+        "coming soon",
+        "coming...",
+        "not available",
+        "notify me when available",
     ]
 
-    if any(p in text for p in negative):
-        in_stock = False
+    # If ANY of these appear anywhere in the page text → definitely NOT in stock
+    for phrase in negative_phrases:
+        if phrase in text:
+            return False
+
+    # 2) Look for enabled buy/add-to-cart buttons
+    BUY_KEYWORDS = (
+        "add to cart",
+        "buy now",
+        "ship it",
+        "pickup",
+        "delivery",
+        "preorder",
+        "pre-order",
+    )
+
+    found_enabled_buy_button = False
 
     for b in soup.find_all(["button", "a"]):
         label = b.get_text(" ", strip=True).lower()
-        cl = " ".join(b.get("class") or []).lower()
+        classes = " ".join(b.get("class") or []).lower()
         aria = (b.get("aria-disabled") or "").lower()
-        disabled = b.has_attr("disabled") or "disabled" in cl or aria == "true"
+        disabled = b.has_attr("disabled") or "disabled" in classes or aria == "true"
 
-        if "coming soon" in label:
-            in_stock = False
+        is_buy_button = any(k in label for k in BUY_KEYWORDS)
 
-        if ("preorder" in label or "pre-order" in label) and disabled:
-            in_stock = False
+        # Disabled buy/preorder button never counts as in-stock
+        if is_buy_button and disabled:
+            continue
 
-        if any(k in label for k in ("add to cart", "buy now", "ship it")) and not disabled:
-            if in_stock is not False:
-                in_stock = True
+        if is_buy_button and not disabled:
+            found_enabled_buy_button = True
 
-    if in_stock is None:
-        if "add to cart" in text or "ship it" in text:
-            in_stock = True
-
-    if price is None:
-        m = re.search(r"\$\s*([0-9]+\.[0-9]{2})", text)
-        if m:
-            try:
-                price = float(m.group(1))
-            except:
-                pass
-
-    return price, in_stock
+    # Must have an enabled buy button and no negatives
+    return found_enabled_buy_button
 
 
 async def check_product(url: str):
@@ -246,17 +285,31 @@ async def check_product(url: str):
         return {"price": None, "in_stock": None}
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    price, _, _ = parse_json_ld(soup)  # still useful for price
 
-    price, in_stock, preorder_flag = parse_json_ld(soup)
-    price, in_stock = refine_html(soup, price, in_stock, preorder_flag)
+    host = urlparse(url).netloc.lower()
+
+    if "target.com" in host:
+        in_stock = detect_in_stock_target(soup)
+    elif "bestbuy.com" in host:
+        in_stock = detect_in_stock_bestbuy(soup)
+    elif "walmart.com" in host:
+        in_stock = detect_in_stock_walmart(soup)
+    else:
+        in_stock = detect_in_stock_generic(soup)
 
     return {"price": price, "in_stock": in_stock}
+
 
 ######################################################################
 # STORE SCRAPING
 ######################################################################
 
 async def scrape_store(url: str):
+    """
+    Fetch a store/category/search page and return a list of Pokémon TCG items.
+    Each item is: {"title": str, "url": str}
+    """
     resp = await fetch(url)
     if not resp:
         return []
@@ -274,10 +327,93 @@ async def scrape_store(url: str):
         item_url = urljoin(url, a["href"])
         items.append({"title": txt, "url": item_url})
 
-    # Deduplicate
-    unique = {(i["title"], i["url"]): i for i in items}
-    lst = list(unique.values())
-    return lst[:MAX_STORE_ITEMS_PER_WATCH]
+    # Deduplicate using the real built-in list type
+    unique = {}
+    for item in items:
+        key = (item["title"], item["url"])
+        unique[key] = item
+
+    deduped_items = builtins.list(unique.values())
+
+    if len(deduped_items) > MAX_STORE_ITEMS_PER_WATCH:
+        deduped_items = deduped_items[:MAX_STORE_ITEMS_PER_WATCH]
+
+    return deduped_items
+
+def detect_in_stock_target(soup):
+    # If a NonbuyableSection exists at all → not buyable
+    if soup.find(attrs={"data-test": "NonbuyableSection"}) is not None:
+        return False
+
+    text = soup.get_text(" ", strip=True).lower()
+
+    negative = [
+        "out of stock",
+        "sold out",
+        "preorders have sold out",
+        "preorder has sold out",
+        "preorders sold out",
+        "preorder sold out",
+        "no longer available",
+        "no longer accepting pre-orders",
+        "no longer accepting preorders",
+        "notify me when available",
+        "temporarily unavailable",
+        "currently unavailable",
+        "coming soon",
+        "coming..."
+    ]
+
+    if any(p in text for p in negative):
+        return False
+
+    # Look for a specific Add to Cart button that is actually enabled
+    for b in soup.find_all("button"):
+        label = (b.get_text(" ", strip=True) or "").lower()
+        aria = (b.get("aria-disabled") or "").lower()
+        classes = " ".join(b.get("class") or []).lower()
+        disabled = b.has_attr("disabled") or "disabled" in classes or aria == "true"
+
+        # Target uses Add to cart with id like addToCartButtonOrTextIdForXXXXX
+        bid = b.get("id") or ""
+        is_add_to_cart = "add to cart" in label or "addtocartbuttonortextidfor" in bid.lower()
+
+        if is_add_to_cart and not disabled:
+            return True
+
+    # No enabled add-to-cart, no positive signal
+    return False
+
+def detect_in_stock_bestbuy(soup):
+    text = soup.get_text(" ", strip=True).lower()
+
+    if "sold out" in text or "out of stock" in text:
+        return False
+
+    for b in soup.find_all(["button", "a"]):
+        label = (b.get_text(" ", strip=True) or "").lower()
+        aria = (b.get("aria-disabled") or "").lower()
+        disabled = b.has_attr("disabled") or aria == "true"
+
+        if "add to cart" in label and not disabled:
+            return True
+
+    return False
+
+
+def detect_in_stock_walmart(soup):
+    text = soup.get_text(" ", strip=True).lower()
+
+    if "out of stock" in text or "sold out" in text:
+        return False
+
+    for b in soup.find_all(["button", "a"]):
+        label = (b.get_text(" ", strip=True) or "").lower()
+        disabled = b.has_attr("disabled")
+        if "add to cart" in label and not disabled:
+            return True
+
+    return False
 
 
 ######################################################################
@@ -304,14 +440,16 @@ async def addwatch(ctx, name: str, store: str, url: str, threshold: float):
             return
 
     PRODUCTS.append({
-        "name": name,
-        "store": store,
-        "url": url,
-        "threshold_price": float(threshold),
-        "last_in_stock": False,
-        "last_price": None,
-        "last_alert_in_stock": None
+    "name": name,
+    "store": store,
+    "url": url,
+    "threshold_price": float(threshold),
+    "last_in_stock": False,
+    "last_price": None,
+    "already_announced": False,
+    "last_announce_ts": 0,  # 👈 NEW
     })
+
     save_products()
 
     await ctx.send(f"✅ Now watching **{name}**")
@@ -353,25 +491,45 @@ async def delstore(ctx, index: int):
     await ctx.send(f"🗑️ Removed store watch:\n{removed['url']}")
 
 
-@bot.command()
-async def list(ctx):
-    msg = []
+@bot.command(name="list")
+async def list_watches(ctx):
+    print("DEBUG: !list command invoked")
 
-    msg.append("**📦 Watched Products:**")
+    lines = []
+
+    lines.append("**📦 Watched Products:**")
     if not PRODUCTS:
-        msg.append("  (none)")
+        lines.append("(none)")
     else:
         for i, p in enumerate(PRODUCTS, start=1):
-            msg.append(f"{i}. {p['name']} — {p['url']}")
+            lines.append(f"{i}. {p['name']}\n{p['url']}")
 
-    msg.append("\n**📂 Watched Store Pages:**")
+    lines.append("\n**📂 Watched Store Pages:**")
     if not STORE_WATCHES:
-        msg.append("  (none)")
+        lines.append("(none)")
     else:
         for i, s in enumerate(STORE_WATCHES, start=1):
-            msg.append(f"{i}. {s['url']}")
+            lines.append(f"{i}. {s['url']}")
 
-    await ctx.send("\n".join(msg))
+    full_text = "\n".join(lines)
+
+    # --- NEW: Discord-safe chunked sending ---
+    MAX_LEN = 1900  # keep below 2000 limit
+    chunks = []
+
+    while len(full_text) > MAX_LEN:
+        # find last newline before limit
+        split_at = full_text.rfind("\n", 0, MAX_LEN)
+        if split_at == -1:
+            split_at = MAX_LEN
+        chunks.append(full_text[:split_at])
+        full_text = full_text[split_at:]
+
+    chunks.append(full_text)  # remainder
+
+    for chunk in chunks:
+        await ctx.send(chunk)
+
 
 
 @bot.command()
@@ -391,6 +549,7 @@ async def helpme(ctx):
 # BACKGROUND LOOPS
 ######################################################################
 
+
 @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
 async def product_loop():
     if not bot.is_ready():
@@ -400,13 +559,31 @@ async def product_loop():
     if not channel:
         return
 
+    # how often we're allowed to shout about the SAME product (in seconds)
+    MIN_ALERT_INTERVAL = 60 * 5  # 5 minutes, tweak if you want
+
+    now = time.time()
+
     for product in PRODUCTS:
         result = await check_product(product["url"])
         price = result["price"]
         stock = result["in_stock"]
 
-        # If newly in stock → announce ONCE
-        if stock is True and product["last_alert_in_stock"] is not True:
+        prev_stock = product.get("last_in_stock", False)
+        already = product.get("already_announced", False)
+        last_announce_ts = product.get("last_announce_ts", 0)
+
+        is_now_in_stock = (stock is True)
+        was_in_stock_before = (prev_stock is True)
+        enough_time_passed = (now - last_announce_ts) >= MIN_ALERT_INTERVAL
+
+        # fire only on TRUE stock, a state change from not-in-stock, and not rate-limited
+        if (
+            is_now_in_stock
+            and not was_in_stock_before
+            and not already
+            and enough_time_passed
+        ):
             msg = (
                 "@everyone\n"
                 f"🎉 **IN STOCK**: {product['name']}\n"
@@ -416,11 +593,13 @@ async def product_loop():
             msg += product["url"]
 
             await channel.send(msg)
-            product["last_alert_in_stock"] = True
 
-        # If out of stock → reset alert state
+            product["already_announced"] = True
+            product["last_announce_ts"] = now
+
+        # if it is definitely out of stock, reset flags for future real restock
         if stock is False:
-            product["last_alert_in_stock"] = False
+            product["already_announced"] = False
 
         product["last_in_stock"] = stock
         product["last_price"] = price
@@ -482,6 +661,16 @@ async def on_ready():
 ######################################################################
 # RUN BOT
 ######################################################################
+
+@bot.event
+async def on_command_error(ctx, error):
+    # Log to console
+    print(f"[COMMAND ERROR] {ctx.command}: {error!r}")
+    # And show *something* in Discord so it doesn't just silently fail
+    try:
+        await ctx.send(f"⚠️ Command error: `{error}`")
+    except Exception:
+        pass
 
 def main():
     if not DISCORD_TOKEN:

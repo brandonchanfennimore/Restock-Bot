@@ -3,30 +3,32 @@
     "name": "Target",
     "url": "https://www.target.com/",
     "last_titles": [],
-    "last_nothing_new_ts": 1763693714.9921372
+    "last_nothing_new_ts": 1763712969.8484187
   },
   {
     "name": "Walmart",
     "url": "https://www.walmart.com/",
-    "last_titles": [],
-    "last_nothing_new_ts": 1763693801.3705413
+    "last_titles": [
+      "Nintendo Switch 2   Pokemon Legends: Z-A - Nintendo Switch 2 Edition Bundle $499.00"
+    ],
+    "last_nothing_new_ts": 1763712969.9864855
   },
   {
     "name": "BestBuy",
     "url": "https://www.bestbuy.com/",
     "last_titles": [],
-    "last_nothing_new_ts": 1763693327.9309258
+    "last_nothing_new_ts": 1763712990.6295202
   },
   {
     "name": "GameStop",
     "url": "https://www.gamestop.com/",
     "last_titles": [],
-    "last_nothing_new_ts": 0
+    "last_nothing_new_ts": 1763712990.750964
   },
   {
     "name": "Pokemon Center TCG",
     "url": "https://www.pokemoncenter.com/category/trading-card-game",
     "last_titles": [],
-    "last_nothing_new_ts": 1763693566.615289
+    "last_nothing_new_ts": 1763712990.8555276
   }
 ]
