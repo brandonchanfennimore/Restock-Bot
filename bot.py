@@ -300,6 +300,52 @@ async def check_product(url: str):
 
     return {"price": price, "in_stock": in_stock}
 
+def guess_store_name_from_url(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+
+    # Simple mapping of known stores
+    STORE_MAP = {
+        "target.com": "Target",
+        "www.target.com": "Target",
+        "gamestop.com": "GameStop",
+        "www.gamestop.com": "GameStop",
+        "walmart.com": "Walmart",
+        "www.walmart.com": "Walmart",
+        "bestbuy.com": "Best Buy",
+        "www.bestbuy.com": "Best Buy",
+    }
+
+    for key, name in STORE_MAP.items():
+        if key in host:
+            return name
+
+    # Fallback: just show the hostname
+    return host
+
+
+def extract_product_title(soup: BeautifulSoup) -> str:
+    # Prefer Open Graph title if present
+    og = soup.find("meta", property="og:title")
+    if og and og.get("content"):
+        title = og["content"].strip()
+        if title:
+            return title
+
+    # Fallback to document <title>
+    if soup.title and soup.title.string:
+        title = soup.title.string.strip()
+        if title:
+            return title
+
+    # Fallback to first h1 heading
+    h1 = soup.find("h1")
+    if h1:
+        title = h1.get_text(" ", strip=True)
+        if title:
+            return title
+
+    return "Unknown product"
+
 
 ######################################################################
 # STORE SCRAPING
@@ -432,27 +478,61 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 ######################################################################
 
 @bot.command()
-async def addwatch(ctx, name: str, store: str, url: str, threshold: float):
+async def addwatch(ctx, url: str):
+    """
+    Add a product to the watch list by URL only.
+    The bot will fetch the page and try to determine:
+    - store name
+    - product title
+    - current price
+    """
     # Prevent duplicates
     for p in PRODUCTS:
         if p["url"].lower() == url.lower():
             await ctx.send("❌ This product is already being watched.")
             return
 
+    # Fetch and parse the product page
+    resp = await fetch(url)
+    if not resp:
+        await ctx.send("❌ Could not fetch that URL. Please check that it is correct.")
+        return
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Derive info
+    name = extract_product_title(soup)
+    store = guess_store_name_from_url(url)
+
+    result = await check_product(url)
+    price = result["price"]
+    stock = result["in_stock"]
+
+    if price is None:
+        await ctx.send(
+            "⚠️ I couldn't detect a price on that page. "
+            "I'll still watch stock status, but no price-based alerts."
+        )
+
     PRODUCTS.append({
-    "name": name,
-    "store": store,
-    "url": url,
-    "threshold_price": float(threshold),
-    "last_in_stock": False,
-    "last_price": None,
-    "already_announced": False,
-    "last_announce_ts": 0,  # 👈 NEW
+        "name": name,
+        "store": store,
+        "url": url,
+        # use the detected price as the initial threshold; you can edit the JSON later if desired
+        "threshold_price": float(price) if price is not None else None,
+        "last_in_stock": stock,
+        "last_price": price,
+        "already_announced": False,
+        "last_announce_ts": 0,
     })
 
     save_products()
 
-    await ctx.send(f"✅ Now watching **{name}**")
+    details = f"Store: **{store}**\nName: **{name}**"
+    if price is not None:
+        details += f"\nPrice: **${price:.2f}**"
+    await ctx.send(f"✅ Now watching this product:\n{details}\n{url}")
+
 
 
 @bot.command()
@@ -502,7 +582,31 @@ async def list_watches(ctx):
         lines.append("(none)")
     else:
         for i, p in enumerate(PRODUCTS, start=1):
-            lines.append(f"{i}. {p['name']}\n{p['url']}")
+            name = p.get("name", "Unknown product")
+            store = p.get("store", "Unknown store")
+            url = p.get("url", "")
+            last_price = p.get("last_price")
+            threshold_price = p.get("threshold_price")
+
+            header = f"{i}. **{name}**"
+            details_parts = [f"Store: {store}"]
+
+            if last_price is not None:
+                try:
+                    details_parts.append(f"Last price: ${float(last_price):.2f}")
+                except Exception:
+                    pass
+            elif threshold_price is not None:
+                try:
+                    details_parts.append(f"Price: ${float(threshold_price):.2f}")
+                except Exception:
+                    pass
+
+            if url:
+                details_parts.append(f"Link: {url}")
+
+            lines.append(header)
+            lines.append("   " + " | ".join(details_parts))
 
     lines.append("\n**📂 Watched Store Pages:**")
     if not STORE_WATCHES:
@@ -511,10 +615,10 @@ async def list_watches(ctx):
         for i, s in enumerate(STORE_WATCHES, start=1):
             lines.append(f"{i}. {s['url']}")
 
-    full_text = "\n".join(lines)
+    # Discord has a message length limit of 2000 chars
+    MAX_LEN = 1800
 
-    # --- NEW: Discord-safe chunked sending ---
-    MAX_LEN = 1900  # keep below 2000 limit
+    full_text = "\n".join(lines)
     chunks = []
 
     while len(full_text) > MAX_LEN:
@@ -536,13 +640,14 @@ async def list_watches(ctx):
 async def helpme(ctx):
     await ctx.send(
         "**Commands:**\n"
-        "`!addwatch <name> <store> <url> <threshold>`\n"
-        "`!delwatch <index>`\n"
-        "`!watchstore <url>`\n"
-        "`!delstore <index>`\n"
-        "`!list`\n"
-        "`!helpme`\n"
+        "`!addwatch <url>` — add a product by URL; the bot will detect store, name, and price.\n"
+        "`!delwatch <index>` — remove a watched product by its number from !list.\n"
+        "`!watchstore <url>` — watch a store/category page for new Pokémon TCG items.\n"
+        "`!delstore <index>` — remove a watched store page by its number from !list.\n"
+        "`!list` — show all watched products and store pages.\n"
+        "`!helpme` — show this help message.\n"
     )
+
 
 
 ######################################################################
