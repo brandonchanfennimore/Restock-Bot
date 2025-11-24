@@ -25,7 +25,7 @@
     "name": "Scarlet & Violet— Destined Rivals Booster Bundle",
     "store": "Target",
     "url": "https://www.target.com/p/pok-233-mon-trading-card-game-scarlet-38-violet-8212-destined-rivals-booster-bundle/-/A-94300067#lnk=sametab",
-    "threshold_price": 29.99,
+    "threshold_price": 19.99,
     "last_in_stock": false,
     "last_price": null,
     "last_no_change_ts": 1763692801.3464496,
@@ -60,7 +60,7 @@
     "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-scarlet-violet-prismatic-evolutions-booster-bundle/JJG2TL23JK",
     "threshold_price": 26.94,
     "last_in_stock": false,
-    "last_price": null,
+    "last_price": 26.94,
     "last_no_change_ts": 1763693006.7574618,
     "already_announced": false,
     "last_announce_ts": 0
@@ -70,7 +70,7 @@
     "store": "BestBuy",
     "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-pokemon-day-2026-collection/JJG2TL3JS9",
     "threshold_price": 14.99,
-    "last_in_stock": false,
+    "last_in_stock": null,
     "last_price": null,
     "last_no_change_ts": 1763693046.2403026,
     "already_announced": false,
@@ -81,8 +81,8 @@
     "store": "BestBuy",
     "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-151-zapdos-ex-box/J3YSYH357L",
     "threshold_price": 21.99,
-    "last_in_stock": null,
-    "last_price": null,
+    "last_in_stock": false,
+    "last_price": 21.99,
     "last_no_change_ts": 1763693401.77517,
     "already_announced": false,
     "last_announce_ts": 0
@@ -93,7 +93,7 @@
     "url": "https://www.bestbuy.com/product/pokemon-trading-card-game-151-alakazam-ex-box/J3YSYH87PT",
     "threshold_price": 21.99,
     "last_in_stock": false,
-    "last_price": null,
+    "last_price": 21.99,
     "last_no_change_ts": 0,
     "already_announced": false,
     "last_announce_ts": 0
@@ -106,6 +106,36 @@
     "last_in_stock": null,
     "last_price": null,
     "last_no_change_ts": 1763693098.6031444,
+    "already_announced": false,
+    "last_announce_ts": 0
+  },
+  {
+    "name": "Pokémon Trading Card Game: Scarlet & Violet— Destined Rivals Elite Trainer Box",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-scarlet-38-violet-8212-destined-rivals-elite-trainer-box/-/A-94300069#lnk=sametab",
+    "threshold_price": null,
+    "last_in_stock": false,
+    "last_price": 19.99,
+    "already_announced": false,
+    "last_announce_ts": 0
+  },
+  {
+    "name": "Pokémon Trading Card Game: Scarlet & Violet—Prismatic Evolutions Super-Premium Collection",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-scarlet-38-violet-8212-prismatic-evolutions-super-premium-collection/-/A-94300072#lnk=sametab",
+    "threshold_price": null,
+    "last_in_stock": false,
+    "last_price": null,
+    "already_announced": false,
+    "last_announce_ts": 0
+  },
+  {
+    "name": "Pokémon Trading Card Game:Lugia ex & Latias ex Premium Collection",
+    "store": "Target",
+    "url": "https://www.target.com/p/pok-233-mon-trading-card-game-lugia-ex-38-latias-ex-premium-collection/-/A-94681773#lnk=sametab",
+    "threshold_price": null,
+    "last_in_stock": false,
+    "last_price": null,
     "already_announced": false,
     "last_announce_ts": 0
   }

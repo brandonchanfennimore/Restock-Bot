@@ -278,6 +278,62 @@ def detect_in_stock_from_html(soup):
     # Must have an enabled buy button and no negatives
     return found_enabled_buy_button
 
+def detect_in_stock_generic(soup):
+    """Generic in-stock detector using HTML heuristics."""
+    return detect_in_stock_from_html(soup)
+
+def detect_price_from_html(soup, host: str):
+    """
+    Fallback price detector using HTML text/attributes.
+    Tries some host-specific selectors (like Target), then a generic $xx.xx regex.
+    """
+    text = soup.get_text(" ", strip=True)
+
+    # ----- Target-specific selectors -----
+    if "target.com" in host:
+        # Try common Target price containers
+        # 1) data-test attributes
+        for attr_value in [
+            "product-price",
+            "price",
+            "product-price-desktop",
+            "product-price-mobile",
+        ]:
+            el = soup.find(attrs={"data-test": attr_value})
+            if el:
+                price_text = el.get_text(" ", strip=True)
+                m = re.search(r"\$([0-9]+(?:\.[0-9]{2})?)", price_text)
+                if m:
+                    try:
+                        return float(m.group(1))
+                    except Exception:
+                        pass
+
+        # 2) Fallback: any <span> or <div> with a $
+        for tag_name in ("span", "div"):
+            for el in soup.find_all(tag_name):
+                t = (el.get_text(" ", strip=True) or "")
+                if "$" in t:
+                    m = re.search(r"\$([0-9]+(?:\.[0-9]{2})?)", t)
+                    if m:
+                        try:
+                            return float(m.group(1))
+                        except Exception:
+                            pass
+
+    # ----- Generic fallback: search entire text for $xx.xx -----
+    matches = re.findall(r"\$([0-9]+(?:\.[0-9]{2})?)", text)
+    if matches:
+        # Take the smallest positive price; often the actual item price
+        try:
+            prices = [float(x) for x in matches]
+            prices = [p for p in prices if p > 0]
+            if prices:
+                return min(prices)
+        except Exception:
+            pass
+
+    return None
 
 async def check_product(url: str):
     resp = await fetch(url)
@@ -289,6 +345,10 @@ async def check_product(url: str):
 
     host = urlparse(url).netloc.lower()
 
+    # Fallback: if JSON-LD didn't give us a price, try HTML heuristics
+    if price is None:
+        price = detect_price_from_html(soup, host)
+
     if "target.com" in host:
         in_stock = detect_in_stock_target(soup)
     elif "bestbuy.com" in host:
@@ -299,6 +359,7 @@ async def check_product(url: str):
         in_stock = detect_in_stock_generic(soup)
 
     return {"price": price, "in_stock": in_stock}
+
 
 def guess_store_name_from_url(url: str) -> str:
     host = urlparse(url).netloc.lower()
@@ -533,8 +594,6 @@ async def addwatch(ctx, url: str):
         details += f"\nPrice: **${price:.2f}**"
     await ctx.send(f"✅ Now watching this product:\n{details}\n{url}")
 
-
-
 @bot.command()
 async def delwatch(ctx, index: int):
     index -= 1
@@ -545,6 +604,81 @@ async def delwatch(ctx, index: int):
     removed = PRODUCTS.pop(index)
     save_products()
     await ctx.send(f"🗑️ Removed: **{removed['name']}**")
+
+@bot.command()
+async def purge(ctx):
+    """
+    Purge all watched products (but keep watched store pages).
+    """
+    count = len(PRODUCTS)
+    PRODUCTS.clear()
+    save_products()
+    await ctx.send(f"🧹 Purged {count} watched product(s).")
+
+@bot.command()
+async def refresh(ctx):
+    """
+    Refresh all watched products:
+    - Re-check each product URL with check_product()
+    - Update price and stock info using the latest scraping logic
+    """
+    if not PRODUCTS:
+        await ctx.send("ℹ️ There are no watched products to refresh.")
+        return
+
+    await ctx.send(f"🔄 Refreshing {len(PRODUCTS)} watched product(s)...")
+
+    old_products = list(PRODUCTS)
+    new_products = []
+    failures = 0
+
+    for p in old_products:
+        url = p.get("url")
+        if not url:
+            failures += 1
+            # keep the original entry if URL is missing
+            new_products.append(p)
+            continue
+
+        try:
+            result = await check_product(url)
+        except Exception as e:
+            # Log the error to console so you can debug if needed
+            print(f"Error refreshing {url}: {e!r}")
+            failures += 1
+            # keep the old data so you don't lose the watch
+            new_products.append(p)
+            continue
+
+        price = result.get("price")
+        in_stock = result.get("in_stock")
+
+        # Start from the old product and patch in new info
+        new_p = dict(p)
+
+        if price is not None:
+            # Use the newly detected price as both threshold and last_price
+            new_p["threshold_price"] = float(price)
+            new_p["last_price"] = price
+
+        if in_stock is not None:
+            new_p["last_in_stock"] = in_stock
+
+        # Reset announcement flags so future changes can re-trigger alerts
+        new_p["already_announced"] = False
+        new_p["last_announce_ts"] = 0
+
+        new_products.append(new_p)
+
+    # Replace PRODUCTS with refreshed list
+    PRODUCTS.clear()
+    PRODUCTS.extend(new_products)
+    save_products()
+
+    msg = f"✅ Refreshed {len(new_products)} product(s)."
+    if failures:
+        msg += f" ⚠️ {failures} product(s) could not be refreshed (kept their old data)."
+    await ctx.send(msg)
 
 
 @bot.command()
@@ -635,19 +769,38 @@ async def list_watches(ctx):
         await ctx.send(chunk)
 
 
-
 @bot.command()
 async def helpme(ctx):
     await ctx.send(
         "**Commands:**\n"
-        "`!addwatch <url>` — add a product by URL; the bot will detect store, name, and price.\n"
-        "`!delwatch <index>` — remove a watched product by its number from !list.\n"
-        "`!watchstore <url>` — watch a store/category page for new Pokémon TCG items.\n"
-        "`!delstore <index>` — remove a watched store page by its number from !list.\n"
-        "`!list` — show all watched products and store pages.\n"
-        "`!helpme` — show this help message.\n"
+        "`!addwatch <...>` — add a product to watch.\n"
+        "`!delwatch <index>` — delete a watched product by index.\n"
+        "`!refresh` — re-check all watched product URLs and update their prices/stock.\n"
+        "`!watchstore <url>` — watch a store/category page.\n"
+        "`!delstore <index>` — delete a watched store page.\n"
+        "`!list` — list watched products and store pages.\n"
+        "`!helpme` — show this help.\n"
     )
 
+
+@bot.command()
+async def shutdown(ctx):
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        return
+    """
+    Safely shut down the bot.
+    Only the bot owner (you) can run this command.
+    """
+    # SECURITY CHECK: Only allow YOUR Discord user ID to run shutdown
+    OWNER_ID = 585212594063671335
+
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You are not authorized to shut down the bot.")
+        return
+
+    await channel.send("🛑 Shutting down... Goodbye!")
+    await bot.close()
 
 
 ######################################################################
@@ -729,7 +882,7 @@ async def store_loop():
         new_items = [i for i in items if i["title"] not in old_titles]
 
         if new_items:
-            msg = ["@everyone", "🆕 **New Pokémon TCG Items Appeared:**"]
+            msg = ["@everyone", "🆕 **New Pokémon Items Appeared:**"]
             for n in new_items:
                 msg.append(f"- {n['title']}\n  {n['url']}")
 
